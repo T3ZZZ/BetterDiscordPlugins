@@ -122,22 +122,15 @@ const STYLES = `
 `;
 
 module.exports = class RecentlyVisitedChannels {
-    constructor() {
-        this.settings = { ...DEFAULT_SETTINGS };
-        this.history = [];
-        this.selected = 0;
-        this.overlay = null;
-        this.search = null;
-        this.list = null;
-
-        this.onKeyDown = this.onKeyDown.bind(this);
-        this.onOverlayPointerDown = this.onOverlayPointerDown.bind(this);
-        this.onChannelChange = this.onChannelChange.bind(this);
-    }
+    settings = { ...DEFAULT_SETTINGS };
+    history = [];
+    selected = 0;
+    overlay = null;
+    search = null;
+    list = null;
 
     start() {
         this.settings = { ...DEFAULT_SETTINGS, ...(Data.load(NAME, "settings") ?? {}) };
-
         this.channelStore = Webpack.getStore("ChannelStore");
         this.guildStore = Webpack.getStore("GuildStore");
         this.userStore = Webpack.getStore("UserStore");
@@ -147,7 +140,6 @@ module.exports = class RecentlyVisitedChannels {
         DOM.addStyle(NAME, STYLES);
         document.addEventListener("keydown", this.onKeyDown, true);
         this.selectedChannelStore?.addChangeListener(this.onChannelChange);
-
         this.onChannelChange();
     }
 
@@ -156,7 +148,6 @@ module.exports = class RecentlyVisitedChannels {
         this.selectedChannelStore?.removeChangeListener(this.onChannelChange);
         this.close();
         this.history = [];
-
         DOM.removeStyle(NAME);
     }
 
@@ -175,35 +166,26 @@ module.exports = class RecentlyVisitedChannels {
                 }
             ],
             onChange: (_, id, value) => {
-                this.updateSetting(id, value);
+                if (id === "key") {
+                    const key = String(value).replace(/[^a-z0-9]/gi, "").slice(-1).toLowerCase();
+
+                    if (!key) {
+                        return;
+                    }
+
+                    this.settings.key = key;
+                } else {
+                    this.settings[id] = value;
+                }
+
+                Data.save(NAME, "settings", this.settings);
             }
         });
     }
 
-    updateSetting(id, value) {
-        if (id === "key") {
-            const key = String(value).replace(/[^a-z0-9]/gi, "").slice(-1).toLowerCase();
-
-            if (!key) {
-                return;
-            }
-
-            this.settings.key = key;
-        } else {
-            this.settings[id] = value;
-        }
-
-        Data.save(NAME, "settings", this.settings);
-    }
-
-    onChannelChange() {
+    onChannelChange = () => {
         const id = this.selectedChannelStore?.getChannelId();
-
-        if (!id) {
-            return;
-        }
-
-        const channel = this.channelStore?.getChannel(id);
+        const channel = id && this.channelStore?.getChannel(id);
 
         if (!channel) {
             return;
@@ -218,7 +200,7 @@ module.exports = class RecentlyVisitedChannels {
         };
 
         this.history = [entry, ...this.history.filter(item => item.id !== id)].slice(0, MAX_ITEMS);
-    }
+    };
 
     getChannelName(channel) {
         if (!DM_TYPES.includes(channel.type)) {
@@ -226,15 +208,20 @@ module.exports = class RecentlyVisitedChannels {
         }
 
         const user = this.userStore?.getUser(channel.recipients?.[0]);
-
         return user?.globalName || user?.username || channel.name || "Unknown";
     }
 
-    onKeyDown(event) {
+    onKeyDown = event => {
         if (this.isShortcut(event)) {
             event.preventDefault();
             event.stopImmediatePropagation();
-            this.toggle();
+
+            if (this.overlay) {
+                this.close();
+            } else {
+                this.open();
+            }
+
             return;
         }
 
@@ -257,10 +244,10 @@ module.exports = class RecentlyVisitedChannels {
                 break;
             case "Enter":
                 event.preventDefault();
-                this.openSelected();
+                this.openChannel(this.getFiltered()[this.selected]?.id);
                 break;
         }
-    }
+    };
 
     isShortcut(event) {
         return event.key.toLowerCase() === this.settings.key &&
@@ -269,18 +256,8 @@ module.exports = class RecentlyVisitedChannels {
             event.altKey === this.settings.alt;
     }
 
-    toggle() {
-        if (this.overlay) {
-            this.close();
-            return;
-        }
-
-        this.open();
-    }
-
     open() {
         this.selected = 0;
-
         this.search = this.createElement("input", "rvc-search");
         this.search.type = "text";
         this.search.placeholder = "Search recently visited...";
@@ -297,7 +274,11 @@ module.exports = class RecentlyVisitedChannels {
 
         this.overlay = this.createElement("div", "rvc-overlay");
         this.overlay.appendChild(modal);
-        this.overlay.addEventListener("pointerdown", this.onOverlayPointerDown);
+        this.overlay.addEventListener("pointerdown", event => {
+            if (event.target === this.overlay) {
+                this.close();
+            }
+        });
 
         document.body.appendChild(this.overlay);
         this.render();
@@ -311,10 +292,11 @@ module.exports = class RecentlyVisitedChannels {
         this.list = null;
     }
 
-    onOverlayPointerDown(event) {
-        if (event.target === this.overlay) {
-            this.close();
-        }
+    createElement(tag, className, text = "") {
+        const element = document.createElement(tag);
+        element.className = className;
+        element.textContent = text;
+        return element;
     }
 
     getFiltered() {
@@ -329,7 +311,6 @@ module.exports = class RecentlyVisitedChannels {
 
     render() {
         const items = this.getFiltered();
-
         this.list.replaceChildren();
 
         if (!items.length) {
@@ -337,26 +318,20 @@ module.exports = class RecentlyVisitedChannels {
             return;
         }
 
-        items.forEach((item, index) => {
-            this.list.appendChild(this.createRow(item, index));
-        });
+        items.forEach((item, index) => this.list.appendChild(this.createRow(item, index)));
     }
 
     createRow(item, index) {
         const row = this.createElement("div", "rvc-item");
         row.classList.toggle("rvc-selected", index === this.selected);
 
-        const icon = this.createElement("span", "rvc-icon", DM_TYPES.includes(item.type) ? "💬" : "#");
         const content = this.createElement("div", "rvc-content");
-        const name = this.createElement("div", "rvc-name", item.name);
-        const meta = this.createElement(
-            "div",
-            "rvc-meta",
-            [item.server, this.formatAge(item.timestamp)].filter(Boolean).join(" • ")
+        content.append(
+            this.createElement("div", "rvc-name", item.name),
+            this.createElement("div", "rvc-meta", [item.server, this.formatAge(item.timestamp)].filter(Boolean).join(" • "))
         );
 
-        content.append(name, meta);
-        row.append(icon, content);
+        row.append(this.createElement("span", "rvc-icon", DM_TYPES.includes(item.type) ? "💬" : "#"), content);
 
         row.addEventListener("mouseenter", () => {
             this.selected = index;
@@ -376,18 +351,8 @@ module.exports = class RecentlyVisitedChannels {
         return row;
     }
 
-    createElement(tag, className, text = "") {
-        const element = document.createElement(tag);
-        element.className = className;
-        element.textContent = text;
-
-        return element;
-    }
-
     updateSelection() {
-        [...this.list.children].forEach((row, index) => {
-            row.classList.toggle("rvc-selected", index === this.selected);
-        });
+        [...this.list.children].forEach((row, index) => row.classList.toggle("rvc-selected", index === this.selected));
     }
 
     move(amount) {
@@ -402,18 +367,8 @@ module.exports = class RecentlyVisitedChannels {
         this.list.children[this.selected]?.scrollIntoView({ block: "nearest" });
     }
 
-    openSelected() {
-        const item = this.getFiltered()[this.selected];
-
-        if (!item) {
-            return;
-        }
-
-        this.openChannel(item.id);
-    }
-
     openChannel(id) {
-        const channel = this.channelStore?.getChannel(id);
+        const channel = id && this.channelStore?.getChannel(id);
 
         if (!channel) {
             return;
@@ -436,7 +391,6 @@ module.exports = class RecentlyVisitedChannels {
         }
 
         const [size, unit] = AGE_UNITS.find(([value]) => seconds >= value);
-
         return `${Math.floor(seconds / size)}${unit} ago`;
     }
 };
