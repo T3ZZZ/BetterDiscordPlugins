@@ -12,10 +12,6 @@ const MAX_ENTRIES = 50;
 const PREVIEW_LENGTH = 140;
 const DM_TYPE = 1;
 const INBOX_SELECTOR = "[class*='trailing'] [class*='pulse'] [class*='clickable']";
-const CLICKABLE_SELECTOR = "[role='button'], button";
-const BUTTON_LABEL = "Better Inbox";
-const HIDDEN_CLASS = "bi-hidden";
-const MINUTE = 60000;
 const AGE_UNITS = [[1440, "d"], [60, "h"], [1, "m"]];
 
 const STYLES = `
@@ -254,21 +250,14 @@ const STYLES = `
 `;
 
 module.exports = class BetterInbox {
-    constructor() {
-        this.entries = [];
-        this.inbox = null;
-        this.button = null;
-        this.holder = null;
-        this.badge = null;
-        this.panel = null;
-        this.list = null;
-        this.observer = null;
-
-        this.onMessage = this.onMessage.bind(this);
-        this.onDocumentPointerDown = this.onDocumentPointerDown.bind(this);
-        this.onKeyDown = this.onKeyDown.bind(this);
-        this.inject = this.inject.bind(this);
-    }
+    entries = [];
+    inbox = null;
+    button = null;
+    holder = null;
+    badge = null;
+    panel = null;
+    list = null;
+    observer = null;
 
     start() {
         this.channelStore = Webpack.getStore("ChannelStore");
@@ -305,7 +294,7 @@ module.exports = class BetterInbox {
         this.observer = null;
 
         this.closePanel();
-        this.inbox?.classList.remove(HIDDEN_CLASS);
+        this.inbox?.classList.remove("bi-hidden");
         this.inbox = null;
         this.button?.remove();
         this.button = null;
@@ -322,26 +311,17 @@ module.exports = class BetterInbox {
             return candidate;
         }
 
-        return Webpack.getModule(
-            module => module?._actionHandlers && typeof module.subscribe === "function",
-            { searchExports: true }
-        );
+        return Webpack.getModule(module => module?._actionHandlers && typeof module.subscribe === "function", { searchExports: true });
     }
 
     findInbox() {
-        const target = [...document.querySelectorAll(INBOX_SELECTOR)].find(
-            element => !this.button?.contains(element)
-        );
+        const target = [...document.querySelectorAll(INBOX_SELECTOR)].find(element => !this.button?.contains(element));
 
         if (!target) {
             return null;
         }
 
-        return this.getWrapper(target.closest(CLICKABLE_SELECTOR) ?? target);
-    }
-
-    getWrapper(element) {
-        let node = element;
+        let node = target.closest("[role='button'], button") ?? target;
 
         while (node.parentElement?.childElementCount === 1 && node.parentElement !== document.body) {
             node = node.parentElement;
@@ -350,7 +330,7 @@ module.exports = class BetterInbox {
         return node;
     }
 
-    inject() {
+    inject = () => {
         if (!this.inbox?.isConnected) {
             this.inbox = this.findInbox();
         }
@@ -365,28 +345,26 @@ module.exports = class BetterInbox {
             this.updateBadge();
         }
 
-        this.inbox.classList.add(HIDDEN_CLASS);
-    }
+        this.inbox.classList.add("bi-hidden");
+    };
 
     createElement(tag, className, text = "") {
         const element = document.createElement(tag);
         element.className = className;
         element.textContent = text;
-
         return element;
     }
 
     createButton(inbox) {
         const button = inbox.cloneNode(true);
-        button.classList.remove(HIDDEN_CLASS);
+        button.classList.remove("bi-hidden");
 
         const icon = button.querySelector("svg");
         const holder = icon?.parentElement ?? button;
 
         this.badge = this.createElement("span", "bi-badge");
-
-        holder.classList.add("bi-button");
         this.holder = holder;
+        holder.classList.add("bi-button");
 
         if (icon) {
             holder.replaceChildren(icon, this.badge);
@@ -394,9 +372,15 @@ module.exports = class BetterInbox {
             holder.append(this.badge);
         }
 
-        button.setAttribute("aria-label", BUTTON_LABEL);
-        button.querySelectorAll("[aria-label]").forEach(node => node.setAttribute("aria-label", BUTTON_LABEL));
-        button.addEventListener("click", () => this.togglePanel());
+        button.setAttribute("aria-label", "Better Inbox");
+        button.querySelectorAll("[aria-label]").forEach(node => node.setAttribute("aria-label", "Better Inbox"));
+        button.addEventListener("click", () => {
+            if (this.panel) {
+                this.closePanel();
+            } else {
+                this.openPanel();
+            }
+        });
 
         return button;
     }
@@ -419,7 +403,7 @@ module.exports = class BetterInbox {
         }
     }
 
-    onMessage({ message }) {
+    onMessage = ({ message }) => {
         this.currentUserId ??= this.userStore?.getCurrentUser()?.id ?? null;
 
         if (!message?.channel_id || !this.currentUserId) {
@@ -434,16 +418,14 @@ module.exports = class BetterInbox {
         if (this.shouldTrack(message)) {
             this.track(message);
         }
-    }
+    };
 
     shouldTrack(message) {
         if (message.author?.bot) {
             return false;
         }
 
-        const channel = this.channelStore?.getChannel(message.channel_id);
-
-        if (channel?.type === DM_TYPE) {
+        if (this.channelStore?.getChannel(message.channel_id)?.type === DM_TYPE) {
             return true;
         }
 
@@ -451,11 +433,8 @@ module.exports = class BetterInbox {
     }
 
     mentionsMe(message) {
-        if (!Array.isArray(message.mentions)) {
-            return false;
-        }
-
-        return message.mentions.some(mention => (mention?.id ?? mention) === this.currentUserId);
+        return Array.isArray(message.mentions) &&
+            message.mentions.some(mention => (mention?.id ?? mention) === this.currentUserId);
     }
 
     repliesToMe(message) {
@@ -487,7 +466,6 @@ module.exports = class BetterInbox {
         };
 
         this.entries = [entry, ...this.entries.filter(item => item.channelId !== entry.channelId)].slice(0, MAX_ENTRIES);
-
         this.save();
     }
 
@@ -508,7 +486,6 @@ module.exports = class BetterInbox {
         }
 
         const index = Number((BigInt(author?.id ?? 0) >> 22n) % 6n);
-
         return `https://cdn.discordapp.com/embed/avatars/${index}.png`;
     }
 
@@ -520,11 +497,7 @@ module.exports = class BetterInbox {
         const guild = this.guildStore?.getGuild(channel.guild_id)?.name;
         const name = channel.name || "Group";
 
-        if (guild) {
-            return `${guild} • #${name}`;
-        }
-
-        return name;
+        return guild ? `${guild} • #${name}` : name;
     }
 
     getPreview(message) {
@@ -534,27 +507,11 @@ module.exports = class BetterInbox {
             return content.slice(0, PREVIEW_LENGTH);
         }
 
-        if (message.attachments?.length) {
-            return "Sent an attachment.";
-        }
-
-        return "Sent a message.";
-    }
-
-    togglePanel() {
-        if (this.panel) {
-            this.closePanel();
-            return;
-        }
-
-        this.openPanel();
+        return message.attachments?.length ? "Sent an attachment." : "Sent a message.";
     }
 
     openPanel() {
-        this.panel = this.createElement("div", "bi-panel");
-
         const header = this.createElement("div", "bi-header");
-        const title = this.createElement("span", "bi-title", "Better Inbox");
         const clear = this.createElement("span", "bi-clear", "Ignore all");
 
         clear.addEventListener("click", () => {
@@ -562,10 +519,10 @@ module.exports = class BetterInbox {
             this.save();
         });
 
-        header.append(title, clear);
+        header.append(this.createElement("span", "bi-title", "Better Inbox"), clear);
 
         this.list = this.createElement("div", "bi-list");
-
+        this.panel = this.createElement("div", "bi-panel");
         this.panel.append(header, this.list);
         document.body.appendChild(this.panel);
 
@@ -584,19 +541,19 @@ module.exports = class BetterInbox {
         this.holder?.classList.remove("bi-open");
     }
 
-    onDocumentPointerDown(event) {
+    onDocumentPointerDown = event => {
         if (!this.panel || this.panel.contains(event.target) || this.button?.contains(event.target)) {
             return;
         }
 
         this.closePanel();
-    }
+    };
 
-    onKeyDown(event) {
+    onKeyDown = event => {
         if (event.key === "Escape" && this.panel) {
             this.closePanel();
         }
-    }
+    };
 
     renderList() {
         this.list.replaceChildren();
@@ -610,23 +567,17 @@ module.exports = class BetterInbox {
     }
 
     createEntry(entry) {
-        const row = this.createElement("div", "bi-entry");
         const avatar = this.createElement("img", "bi-avatar");
-        const body = this.createElement("div", "bi-body");
-        const top = this.createElement("div", "bi-top");
-        const author = this.createElement("span", "bi-author", entry.authorName);
-        const time = this.createElement("span", "bi-time", this.formatAge(entry.timestamp));
-
         avatar.src = entry.avatar;
-        top.append(author, time);
+
+        const time = this.createElement("span", "bi-time", this.formatAge(entry.timestamp));
+        const top = this.createElement("div", "bi-top");
+        top.append(this.createElement("span", "bi-author", entry.authorName), time);
 
         if (entry.count > 1) {
             time.before(this.createElement("span", "bi-pill", `${entry.count} new`));
         }
 
-        const source = this.createElement("div", "bi-source", entry.source);
-        const content = this.createElement("div", "bi-content", entry.content);
-        const actions = this.createElement("div", "bi-actions");
         const reply = this.createElement("button", "bi-action bi-reply", "Reply");
         const ignore = this.createElement("button", "bi-action bi-ignore", "Ignore");
 
@@ -636,22 +587,31 @@ module.exports = class BetterInbox {
             this.save();
         });
 
+        const actions = this.createElement("div", "bi-actions");
         actions.append(reply, ignore);
-        body.append(top, source, content, actions);
+
+        const body = this.createElement("div", "bi-body");
+        body.append(
+            top,
+            this.createElement("div", "bi-source", entry.source),
+            this.createElement("div", "bi-content", entry.content),
+            actions
+        );
+
+        const row = this.createElement("div", "bi-entry");
         row.append(avatar, body);
 
         return row;
     }
 
     formatAge(timestamp) {
-        const minutes = Math.floor((Date.now() - timestamp) / MINUTE);
+        const minutes = Math.floor((Date.now() - timestamp) / 60000);
 
         if (minutes < 1) {
             return "just now";
         }
 
         const [size, unit] = AGE_UNITS.find(([value]) => minutes >= value);
-
         return `${Math.floor(minutes / size)}${unit} ago`;
     }
 
