@@ -5,7 +5,7 @@
  * @version 1.0.0
  */
 
-const { DOM, Webpack } = BdApi;
+const { DOM, UI, Webpack } = BdApi;
 
 const NAME = "MessagePurger";
 const BUTTON_CLASS = "mp-button";
@@ -19,6 +19,7 @@ const AMOUNT_PRESETS = [25, 50, 100, 250];
 const STORE_DELAY = 400;
 const DELETABLE_TYPES = [0, 19];
 const INDEXING_CODE = 110000;
+const READY_STATUS = "Ready.";
 
 const TRASH_ICON = `<svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M14.25 1c.41 0 .75.34.75.75V3h5.25c.41 0 .75.34.75.75v.5c0 .41-.34.75-.75.75H3.75A.75.75 0 0 1 3 4.25v-.5c0-.41.34-.75.75-.75H9V1.75c0-.41.34-.75.75-.75h4.5Z"></path><path d="M5.06 7a1 1 0 0 0-1 1.06l.76 12.13a3 3 0 0 0 3 2.81h8.36a3 3 0 0 0 3-2.81l.75-12.13a1 1 0 0 0-1-1.06H5.07Z"></path></svg>`;
 
@@ -328,6 +329,9 @@ module.exports = class MessagePurger {
     startButton = null;
     observer = null;
     running = false;
+    job = null;
+    statusText = READY_STATUS;
+    progress = 0;
 
     start() {
         this.userStore = Webpack.getStore("UserStore");
@@ -442,7 +446,7 @@ module.exports = class MessagePurger {
     }
 
     open() {
-        const channel = this.channelStore?.getChannel(this.selectedChannelStore?.getChannelId());
+        const channel = this.job?.channel ?? this.channelStore?.getChannel(this.selectedChannelStore?.getChannelId());
 
         if (!channel || this.overlay) {
             return;
@@ -473,7 +477,7 @@ module.exports = class MessagePurger {
                 <div class="mp-estimate"></div>
             </div>
             <div class="mp-progress"><div class="mp-fill"></div></div>
-            <div class="mp-status"><span class="mp-dot"></span><span class="mp-text">Ready.</span></div>
+            <div class="mp-status"><span class="mp-dot"></span><span class="mp-text">${READY_STATUS}</span></div>
             <div class="mp-footer">
                 <button class="mp-action mp-cancel">Cancel</button>
                 <button class="mp-action mp-start">Start</button>
@@ -508,7 +512,16 @@ module.exports = class MessagePurger {
         this.delayInput.addEventListener("input", () => this.updateEstimate());
         modal.querySelector(".mp-cancel").addEventListener("click", () => this.close());
         this.startButton.addEventListener("click", () => this.onStart(channel));
+
+        if (this.job) {
+            this.amountInput.value = this.job.amount;
+            this.delayInput.value = this.job.delay / 1000;
+        }
+
         this.updateEstimate();
+        this.setBusy(this.running);
+        this.setStatus(this.statusText);
+        this.setProgress(this.progress);
 
         this.overlay = document.createElement("div");
         this.overlay.className = "mp-overlay";
@@ -521,16 +534,18 @@ module.exports = class MessagePurger {
 
         document.body.appendChild(this.overlay);
         this.setButtonActive(true);
-        this.amountInput.focus();
-        this.amountInput.select();
+
+        if (!this.running) {
+            this.amountInput.focus();
+            this.amountInput.select();
+        }
     }
 
     close() {
-        this.running = false;
         this.overlay?.remove();
         this.overlay = this.modal = this.status = this.fill = null;
         this.estimate = this.amountInput = this.delayInput = this.startButton = null;
-        this.setButtonActive(false);
+        this.setButtonActive(this.running);
     }
 
     onKeyDown = event => {
@@ -574,7 +589,11 @@ module.exports = class MessagePurger {
     }
 
     setBusy(busy) {
-        this.modal?.classList.toggle("mp-busy", busy);
+        if (!this.modal) {
+            return;
+        }
+
+        this.modal.classList.toggle("mp-busy", busy);
         this.amountInput.disabled = busy;
         this.delayInput.disabled = busy;
         this.startButton.textContent = busy ? "Stop" : "Start";
@@ -582,12 +601,16 @@ module.exports = class MessagePurger {
     }
 
     setStatus(text) {
+        this.statusText = text;
+
         if (this.status) {
             this.status.textContent = text;
         }
     }
 
     setProgress(ratio) {
+        this.progress = ratio;
+
         if (this.fill) {
             this.fill.style.width = `${Math.round(ratio * 100)}%`;
         }
@@ -614,9 +637,10 @@ module.exports = class MessagePurger {
         }
 
         this.running = true;
+        this.job = { channel, amount, delay: Math.round(delay * 1000) };
         this.setBusy(true);
         this.setProgress(0);
-        this.purge(channel, amount, Math.round(delay * 1000));
+        this.purge(channel, amount, this.job.delay);
     }
 
     async purge(channel, amount, delay) {
@@ -657,9 +681,12 @@ module.exports = class MessagePurger {
 
     finish() {
         this.running = false;
+        this.job = null;
+        this.setBusy(false);
+        this.setButtonActive(false);
 
-        if (this.modal) {
-            this.setBusy(false);
+        if (!this.modal) {
+            UI.showToast(`Message Purger: ${this.statusText}`, { type: "info" });
         }
     }
 
