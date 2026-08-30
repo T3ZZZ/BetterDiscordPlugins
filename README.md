@@ -1,0 +1,1 @@
+Educational purposes only. This project is intended for educational and research purposes only. Use it at your own risk. The author is not responsible for any misuse, damage, or consequences resulting from the use of this project.
