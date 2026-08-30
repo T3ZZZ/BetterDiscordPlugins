@@ -15,7 +15,6 @@ const SEARCH_INTERVAL = 1500;
 const SEARCH_RETRIES = 5;
 const HISTORY_PAGE_SIZE = 100;
 const HISTORY_PAGES = 20;
-const API_METHODS = ["get", "post", "put", "patch", "del"];
 const AMOUNT_PRESETS = [25, 50, 100, 250];
 const STORE_DELAY = 400;
 const DELETABLE_TYPES = [0, 19];
@@ -319,22 +318,16 @@ const STYLES = `
 `;
 
 module.exports = class MessagePurger {
-    constructor() {
-        this.overlay = null;
-        this.modal = null;
-        this.status = null;
-        this.fill = null;
-        this.estimate = null;
-        this.amountInput = null;
-        this.delayInput = null;
-        this.startButton = null;
-        this.observer = null;
-        this.running = false;
-
-        this.inject = this.inject.bind(this);
-        this.onOverlayPointerDown = this.onOverlayPointerDown.bind(this);
-        this.onKeyDown = this.onKeyDown.bind(this);
-    }
+    overlay = null;
+    modal = null;
+    status = null;
+    fill = null;
+    estimate = null;
+    amountInput = null;
+    delayInput = null;
+    startButton = null;
+    observer = null;
+    running = false;
 
     start() {
         this.userStore = Webpack.getStore("UserStore");
@@ -350,7 +343,6 @@ module.exports = class MessagePurger {
 
         this.observer = new MutationObserver(this.inject);
         this.observer.observe(document.body, { childList: true, subtree: true });
-
         this.inject();
     }
 
@@ -370,8 +362,9 @@ module.exports = class MessagePurger {
             return this.http;
         }
 
+        const methods = ["get", "post", "put", "patch", "del"];
         const candidates = Webpack.getModule(
-            module => API_METHODS.every(key => typeof module?.[key] === "function"),
+            module => methods.every(key => typeof module?.[key] === "function"),
             { searchExports: true, first: false }
         ) ?? [];
 
@@ -391,7 +384,7 @@ module.exports = class MessagePurger {
         return this.http;
     }
 
-    inject() {
+    inject = () => {
         const toolbar = document.querySelector(TOOLBAR_SELECTOR);
 
         if (!toolbar || toolbar.querySelector(`.${BUTTON_CLASS}`)) {
@@ -408,7 +401,7 @@ module.exports = class MessagePurger {
 
         this.matchNativeIcon(button, toolbar);
         toolbar.insertBefore(button, toolbar.firstChild);
-    }
+    };
 
     matchNativeIcon(button, toolbar) {
         const reference = toolbar.querySelector("svg");
@@ -439,22 +432,17 @@ module.exports = class MessagePurger {
         document.querySelectorAll(`.${BUTTON_CLASS}`).forEach(button => button.classList.toggle("mp-active", active));
     }
 
-    getChannel() {
-        return this.channelStore?.getChannel(this.selectedChannelStore?.getChannelId());
-    }
-
     getChannelLabel(channel) {
         if (channel.name) {
             return `#${channel.name}`;
         }
 
         const user = this.userStore?.getUser(channel.recipients?.[0]);
-
         return user?.globalName || user?.username || "this conversation";
     }
 
     open() {
-        const channel = this.getChannel();
+        const channel = this.channelStore?.getChannel(this.selectedChannelStore?.getChannelId());
 
         if (!channel || this.overlay) {
             return;
@@ -502,25 +490,8 @@ module.exports = class MessagePurger {
         this.delayInput = modal.querySelector(".mp-delay");
         this.startButton = modal.querySelector(".mp-start");
 
-        this.buildChips(modal.querySelector(".mp-chips"));
-        this.amountInput.addEventListener("input", () => this.updateEstimate());
-        this.delayInput.addEventListener("input", () => this.updateEstimate());
-        modal.querySelector(".mp-cancel").addEventListener("click", () => this.close());
-        this.startButton.addEventListener("click", () => this.onStart(channel));
-        this.updateEstimate();
+        const chips = modal.querySelector(".mp-chips");
 
-        this.overlay = document.createElement("div");
-        this.overlay.className = "mp-overlay";
-        this.overlay.appendChild(modal);
-        this.overlay.addEventListener("pointerdown", this.onOverlayPointerDown);
-
-        document.body.appendChild(this.overlay);
-        this.setButtonActive(true);
-        this.amountInput.focus();
-        this.amountInput.select();
-    }
-
-    buildChips(container) {
         AMOUNT_PRESETS.forEach(preset => {
             const chip = document.createElement("button");
             chip.className = "mp-chip";
@@ -530,15 +501,67 @@ module.exports = class MessagePurger {
                 this.updateEstimate();
             });
 
-            container.appendChild(chip);
+            chips.appendChild(chip);
         });
+
+        this.amountInput.addEventListener("input", () => this.updateEstimate());
+        this.delayInput.addEventListener("input", () => this.updateEstimate());
+        modal.querySelector(".mp-cancel").addEventListener("click", () => this.close());
+        this.startButton.addEventListener("click", () => this.onStart(channel));
+        this.updateEstimate();
+
+        this.overlay = document.createElement("div");
+        this.overlay.className = "mp-overlay";
+        this.overlay.appendChild(modal);
+        this.overlay.addEventListener("pointerdown", event => {
+            if (event.target === this.overlay) {
+                this.close();
+            }
+        });
+
+        document.body.appendChild(this.overlay);
+        this.setButtonActive(true);
+        this.amountInput.focus();
+        this.amountInput.select();
+    }
+
+    close() {
+        this.running = false;
+        this.overlay?.remove();
+        this.overlay = this.modal = this.status = this.fill = null;
+        this.estimate = this.amountInput = this.delayInput = this.startButton = null;
+        this.setButtonActive(false);
+    }
+
+    onKeyDown = event => {
+        if (event.key === "Escape" && this.overlay) {
+            event.preventDefault();
+            this.close();
+        }
+    };
+
+    readAmount() {
+        const amount = parseInt(this.amountInput.value, 10);
+        return amount > 0 ? amount : 0;
+    }
+
+    readDelay() {
+        const delay = parseFloat(this.delayInput.value);
+        return delay >= 0 ? delay : NaN;
+    }
+
+    formatDuration(seconds) {
+        const total = Math.round(seconds);
+        const minutes = Math.floor(total / 60);
+
+        return minutes ? `${minutes}m ${total % 60}s` : `${total}s`;
     }
 
     updateEstimate() {
         const amount = this.readAmount();
         const delay = this.readDelay();
 
-        [...this.modal.querySelectorAll(".mp-chip")].forEach(chip => {
+        this.modal.querySelectorAll(".mp-chip").forEach(chip => {
             chip.classList.toggle("mp-selected", Number(chip.textContent) === amount);
         });
 
@@ -550,29 +573,6 @@ module.exports = class MessagePurger {
         this.estimate.textContent = `Up to ${amount} of your messages, about ${this.formatDuration(amount * delay)}.`;
     }
 
-    readAmount() {
-        const amount = parseInt(this.amountInput.value, 10);
-
-        return amount > 0 ? amount : 0;
-    }
-
-    readDelay() {
-        const delay = parseFloat(this.delayInput.value);
-
-        return delay >= 0 ? delay : NaN;
-    }
-
-    formatDuration(seconds) {
-        const total = Math.round(seconds);
-        const minutes = Math.floor(total / 60);
-
-        if (!minutes) {
-            return `${total}s`;
-        }
-
-        return `${minutes}m ${total % 60}s`;
-    }
-
     setBusy(busy) {
         this.modal?.classList.toggle("mp-busy", busy);
         this.amountInput.disabled = busy;
@@ -581,30 +581,15 @@ module.exports = class MessagePurger {
         this.startButton.classList.toggle("mp-running", busy);
     }
 
-    close() {
-        this.running = false;
-        this.overlay?.remove();
-        this.overlay = null;
-        this.modal = null;
-        this.status = null;
-        this.fill = null;
-        this.estimate = null;
-        this.amountInput = null;
-        this.delayInput = null;
-        this.startButton = null;
-        this.setButtonActive(false);
-    }
-
-    onOverlayPointerDown(event) {
-        if (event.target === this.overlay) {
-            this.close();
+    setStatus(text) {
+        if (this.status) {
+            this.status.textContent = text;
         }
     }
 
-    onKeyDown(event) {
-        if (event.key === "Escape" && this.overlay) {
-            event.preventDefault();
-            this.close();
+    setProgress(ratio) {
+        if (this.fill) {
+            this.fill.style.width = `${Math.round(ratio * 100)}%`;
         }
     }
 
@@ -634,22 +619,9 @@ module.exports = class MessagePurger {
         this.purge(channel, amount, Math.round(delay * 1000));
     }
 
-    setStatus(text) {
-        if (this.status) {
-            this.status.textContent = text;
-        }
-    }
-
-    setProgress(ratio) {
-        if (this.fill) {
-            this.fill.style.width = `${Math.round(ratio * 100)}%`;
-        }
-    }
-
     async purge(channel, amount, delay) {
         try {
             this.setStatus("Searching messages...");
-
             const messages = await this.collect(channel, amount);
 
             if (!messages.length) {
@@ -693,11 +665,9 @@ module.exports = class MessagePurger {
 
     async collect(channel, amount) {
         const userId = this.userStore.getCurrentUser().id;
-        const http = await this.resolveHttp(channel.id);
 
-        if (http) {
+        if (await this.resolveHttp(channel.id)) {
             const found = await this.collectFromSearch(channel, userId, amount);
-
             this.setProgress(0);
 
             if (found.length) {
@@ -706,7 +676,6 @@ module.exports = class MessagePurger {
         }
 
         this.setStatus("Scanning history...");
-
         return this.collectFromHistory(channel, userId, amount);
     }
 
@@ -737,9 +706,7 @@ module.exports = class MessagePurger {
                 break;
             }
 
-            for (const group of groups) {
-                this.keep(group.find(entry => entry.hit), userId, amount, found);
-            }
+            groups.forEach(group => this.keep(group.find(entry => entry.hit), userId, amount, found));
 
             offset += SEARCH_PAGE_SIZE;
             this.setProgress(found.length / amount);
@@ -803,11 +770,9 @@ module.exports = class MessagePurger {
             return;
         }
 
-        if (!DELETABLE_TYPES.includes(message.type)) {
-            return;
+        if (DELETABLE_TYPES.includes(message.type)) {
+            found.push(message);
         }
-
-        found.push(message);
     }
 
     async search(channel, userId, offset) {
