@@ -11,9 +11,9 @@ const NAME = "BetterInbox";
 const MAX_ENTRIES = 50;
 const PREVIEW_LENGTH = 140;
 const DM_TYPE = 1;
-const INBOX_SELECTOR = "[class*='inboxIcon'], [class*='inboxButton']";
-const INBOX_LABEL = /^(inbox|boîte de réception)$/i;
+const INBOX_SELECTOR = "[class*='trailing'] [class*='pulse'] [class*='clickable']";
 const CLICKABLE_SELECTOR = "[role='button'], button";
+const BUTTON_LABEL = "Better Inbox";
 const HIDDEN_CLASS = "bi-hidden";
 const MINUTE = 60000;
 const AGE_UNITS = [[1440, "d"], [60, "h"], [1, "m"]];
@@ -329,19 +329,15 @@ module.exports = class BetterInbox {
     }
 
     findInbox() {
-        const target = [...document.querySelectorAll(`${INBOX_SELECTOR}, [aria-label]`)].find(
-            element => !this.button?.contains(element) &&
-                (element.matches(INBOX_SELECTOR) || INBOX_LABEL.test(element.getAttribute("aria-label")))
+        const target = [...document.querySelectorAll(INBOX_SELECTOR)].find(
+            element => !this.button?.contains(element)
         );
 
         if (!target) {
             return null;
         }
 
-        const clickable = target.closest(CLICKABLE_SELECTOR) ??
-            (target instanceof SVGElement ? target.parentElement : target);
-
-        return this.getWrapper(clickable);
+        return this.getWrapper(target.closest(CLICKABLE_SELECTOR) ?? target);
     }
 
     getWrapper(element) {
@@ -398,7 +394,8 @@ module.exports = class BetterInbox {
             holder.append(this.badge);
         }
 
-        button.setAttribute("aria-label", "Better Inbox");
+        button.setAttribute("aria-label", BUTTON_LABEL);
+        button.querySelectorAll("[aria-label]").forEach(node => node.setAttribute("aria-label", BUTTON_LABEL));
         button.addEventListener("click", () => this.togglePanel());
 
         return button;
